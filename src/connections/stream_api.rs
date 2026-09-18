@@ -79,6 +79,11 @@ pub struct ConnectedStreamApi<State = state::Configured> {
 
     cancellation_token: CancellationToken,
 
+    /// The session passkey most recently issued by the node. Admin `set_*`
+    /// commands must echo it back or the node rejects them as replays; it
+    /// expires 300 seconds after the node issued it.
+    session_passkey: Vec<u8>,
+
     typestate: PhantomData<State>,
 }
 
@@ -480,6 +485,7 @@ impl StreamApi {
                 heartbeat_handle,
                 bridge_handle,
                 cancellation_token,
+                session_passkey: Vec::new(),
                 typestate: PhantomData,
             },
         )
@@ -557,6 +563,7 @@ impl ConnectedStreamApi<state::Connected> {
             heartbeat_handle: self.heartbeat_handle,
             bridge_handle: self.bridge_handle,
             cancellation_token: self.cancellation_token,
+            session_passkey: self.session_passkey,
             typestate: PhantomData,
         })
     }
@@ -898,6 +905,63 @@ impl ConnectedStreamApi<state::Configured> {
     ///
     /// None
     ///
+    /// Records the session passkey the node issued in an admin response.
+    ///
+    /// The node sends a passkey with every `get_*_response`, and expects it
+    /// echoed back on `set_*` commands to prevent replay. It expires after 300
+    /// seconds, so callers should refresh it by issuing a get request before a
+    /// batch of writes.
+    pub fn set_session_passkey(&mut self, session_passkey: Vec<u8>) {
+        self.session_passkey = session_passkey;
+    }
+
+    /// The session passkey currently held for admin commands, empty when none
+    /// has been issued yet.
+    pub fn session_passkey(&self) -> &[u8] {
+        &self.session_passkey
+    }
+
+    /// Sends an arbitrary admin message, optionally to a remote node.
+    ///
+    /// The built-in helpers only ever address the locally connected node. This
+    /// is the path for admin operations aimed at another node on the mesh, and
+    /// for variants without a dedicated helper such as key verification. The
+    /// stored session passkey is attached automatically.
+    pub async fn send_admin_message<
+        M,
+        E: Display + std::error::Error + Send + Sync + 'static,
+        R: PacketRouter<M, E>,
+    >(
+        &mut self,
+        packet_router: &mut R,
+        payload_variant: protobufs::admin_message::PayloadVariant,
+        destination: PacketDestination,
+        want_response: bool,
+    ) -> Result<(), Error> {
+        let admin_packet = protobufs::AdminMessage {
+            payload_variant: Some(payload_variant),
+            session_passkey: self.session_passkey.clone(),
+        };
+
+        let byte_data: EncodedMeshPacketData = admin_packet.encode_to_vec().into();
+
+        self.send_mesh_packet(
+            packet_router,
+            byte_data,
+            protobufs::PortNum::AdminApp,
+            destination,
+            MeshChannel::new(0)?,
+            true,
+            want_response,
+            true,
+            None,
+            None,
+        )
+        .await?;
+
+        Ok(())
+    }
+
     pub async fn update_config<
         M,
         E: Display + std::error::Error + Send + Sync + 'static,
@@ -909,7 +973,7 @@ impl ConnectedStreamApi<state::Configured> {
     ) -> Result<(), Error> {
         let config_packet = protobufs::AdminMessage {
             payload_variant: Some(protobufs::admin_message::PayloadVariant::SetConfig(config)),
-            session_passkey: Vec::new(),
+            session_passkey: self.session_passkey.clone(),
         };
 
         let byte_data: EncodedMeshPacketData = config_packet.encode_to_vec().into();
@@ -986,7 +1050,7 @@ impl ConnectedStreamApi<state::Configured> {
             payload_variant: Some(protobufs::admin_message::PayloadVariant::SetModuleConfig(
                 module_config,
             )),
-            session_passkey: Vec::new(),
+            session_passkey: self.session_passkey.clone(),
         };
 
         let byte_data: EncodedMeshPacketData = module_config_packet.encode_to_vec().into();
@@ -1063,7 +1127,7 @@ impl ConnectedStreamApi<state::Configured> {
             payload_variant: Some(protobufs::admin_message::PayloadVariant::SetChannel(
                 channel_config,
             )),
-            session_passkey: Vec::new(),
+            session_passkey: self.session_passkey.clone(),
         };
 
         let byte_data: EncodedMeshPacketData = channel_packet.encode_to_vec().into();
@@ -1131,7 +1195,7 @@ impl ConnectedStreamApi<state::Configured> {
     ) -> Result<(), Error> {
         let user_packet = protobufs::AdminMessage {
             payload_variant: Some(protobufs::admin_message::PayloadVariant::SetOwner(user)),
-            session_passkey: Vec::new(),
+            session_passkey: self.session_passkey.clone(),
         };
 
         let byte_data: EncodedMeshPacketData = user_packet.encode_to_vec().into();
@@ -1215,7 +1279,7 @@ impl ConnectedStreamApi<state::Configured> {
             payload_variant: Some(protobufs::admin_message::PayloadVariant::BeginEditSettings(
                 true,
             )),
-            session_passkey: Vec::new(),
+            session_passkey: self.session_passkey.clone(),
         };
 
         let mut packet_buf = vec![];
@@ -1273,7 +1337,7 @@ impl ConnectedStreamApi<state::Configured> {
             payload_variant: Some(
                 protobufs::admin_message::PayloadVariant::CommitEditSettings(true),
             ),
-            session_passkey: Vec::new(),
+            session_passkey: self.session_passkey.clone(),
         };
 
         let mut packet_buf = vec![];
