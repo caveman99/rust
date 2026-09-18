@@ -8175,12 +8175,12 @@ pub struct Nau7802Config {
     pub calibration_factor: f32,
 }
 ///
-/// AS3935 lightning sensor configuration, for saving to flash
+/// AS3935 lightning sensor state, for saving to flash
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
 #[cfg_attr(feature = "ts-gen", derive(specta::Type))]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct As3935Config {
+pub struct As3935State {
     ///
     /// Antenna tuning capacitance in pF, 0 to 120 in steps of 8. The chip does not retain
     /// this across power loss, so it is stored here and re-applied on every boot.
@@ -13040,7 +13040,7 @@ pub struct SensorConfig {
     ///
     /// AS3935 lightning sensor configuration
     #[prost(message, optional, tag = "7")]
-    pub as3935_config: ::core::option::Option<As3935AdminConfig>,
+    pub as3935_config: ::core::option::Option<As3935Config>,
 }
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
@@ -13186,7 +13186,7 @@ pub struct Ds248xConfig {
 #[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
 #[cfg_attr(feature = "ts-gen", derive(specta::Type))]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct As3935AdminConfig {
+pub struct As3935Config {
     ///
     /// Antenna tuning capacitance in pF, 0 to 120 in steps of 8. The antenna tank must
     /// resonate within 3.5% of 500kHz; the correct trim is specific to the sensor board.
